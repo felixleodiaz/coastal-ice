@@ -1,0 +1,23 @@
+name: lgb-env
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - scipy
+
+  # machine Learning
+  - scikit-learn=1.3.2
+  - lightgbm
+  - shap=0.45.1
+  - optuna
+  - optuna-integration
+
+  # utilities
+  - joblib
+  - matplotlib
+  - tqdm
+  - seaborn
