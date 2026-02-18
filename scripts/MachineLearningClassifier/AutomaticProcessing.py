@@ -56,23 +56,97 @@ def image_clipping(grid):
     startdate = grid.get('Start')
     enddate = grid.get('End')
 
-    # get landsat 8 images
+    ## get landsat 8 images
 
+    # L8 = (
+    #     ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+    #     .filterDate(startdate, enddate)
+    #     .filterBounds(gridGeom)
+    #     .filter(ee.Filter.lt('CLOUD_COVER', 5))
+    #     .map(
+    #         lambda img: (
+    #             img.addBands(
+    #                 img.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
+    #                 .multiply(0.0000275)
+    #                 .add(-0.2),
+    #                 overwrite=True
+    #             )
+    #             .select(
+    #                 ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'],
+    #                 ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+    #             )
+    #             .set('cloud', img.get('CLOUD_COVER'))
+    #             .set('sensor', 'Landsat8')
+    #             .set('area', img.geometry().intersection(gridGeom, 1).area())
+    #         )
+    #     )
+    # )
+
+    ## get landsat 9 images
+
+    # L9 = (
+    #     ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+    #     .filterDate(startdate, enddate)
+    #     .filterBounds(gridGeom)
+    #     .filter(ee.Filter.lt('CLOUD_COVER', 5))
+    #     .map(
+    #         lambda img: (
+    #             img.addBands(
+    #                 img.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
+    #                 .multiply(0.0000275)
+    #                 .add(-0.2),
+    #                 overwrite=True
+    #             )
+    #             .select(
+    #                 ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'],
+    #                 ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+    #             )
+    #             .set('cloud', img.get('CLOUD_COVER'))
+    #             .set('sensor', 'Landsat9')
+    #             .set('area', img.geometry().intersection(gridGeom, 1).area())
+    #         )
+    #     )
+    # )
+
+    ## get sentinel 2 images
+
+    # S2 = (
+    #     ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    #     .filterDate(startdate, enddate)
+    #     .filterBounds(gridGeom)
+    #     .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 5))
+    #     .map(
+    #         lambda img: (
+    #             img.addBands(
+    #                 img.select(['B2', 'B3', 'B4', 'B8', 'B11', 'B12'])
+    #                 .divide(10000),
+    #                 overwrite=True
+    #             )
+    #             .select(
+    #                 ['B2', 'B3', 'B4', 'B8', 'B11', 'B12'],
+    #                 ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+    #             )
+    #             .set('cloud', img.get('CLOUDY_PIXEL_PERCENTAGE'))
+    #             .set('sensor', 'Sentinel2')
+    #             .set('area', img.geometry().intersection(gridGeom, 1).area())
+    #         )
+    #     )
+    # )
+
+    ## get landsat 8 images
+
+    # get landsat 8 images TOA
+    
     L8 = (
-        ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+        ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA')
         .filterDate(startdate, enddate)
         .filterBounds(gridGeom)
         .filter(ee.Filter.lt('CLOUD_COVER', 5))
         .map(
             lambda img: (
-                img.addBands(
-                    img.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
-                    .multiply(0.0000275)
-                    .add(-0.2),
-                    overwrite=True
-                )
+                img
                 .select(
-                    ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'],
+                    ['B2', 'B3', 'B4', 'B5', 'B6', 'B7'],
                     ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
                 )
                 .set('cloud', img.get('CLOUD_COVER'))
@@ -82,23 +156,18 @@ def image_clipping(grid):
         )
     )
 
-    # get landsat 9 images
+    # get landsat 9 images TOA
 
     L9 = (
-        ee.ImageCollection('LANDSAT/LC09/C02/T1_L2')
+        ee.ImageCollection('LANDSAT/LC09/C02/T1_TOA')
         .filterDate(startdate, enddate)
         .filterBounds(gridGeom)
         .filter(ee.Filter.lt('CLOUD_COVER', 5))
         .map(
             lambda img: (
-                img.addBands(
-                    img.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
-                    .multiply(0.0000275)
-                    .add(-0.2),
-                    overwrite=True
-                )
+                img
                 .select(
-                    ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'],
+                    ['B2', 'B3', 'B4', 'B5', 'B6', 'B7'],
                     ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
                 )
                 .set('cloud', img.get('CLOUD_COVER'))
@@ -108,10 +177,10 @@ def image_clipping(grid):
         )
     )
 
-    # get sentinel 2 images
+    # get sentinel 2 images TOA
 
     S2 = (
-        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
         .filterDate(startdate, enddate)
         .filterBounds(gridGeom)
         .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 5))
@@ -247,50 +316,54 @@ def surface_calculations(image):
 
 # workflow
 
-grid = ee.FeatureCollection('projects/gee-personal-483416/assets/CoastCellInfoJan5_10')
+if __name__ == "__main__":
 
-lon_min = int(-180)
-lon_max = int(180)
-step = int(4)
+    grid = ee.FeatureCollection('projects/gee-personal-483416/assets/CoastCellInfoJan5_10')
 
-# create list of lon steps
+    lon_min = int(-180)
+    lon_max = int(180)
+    step = int(4)
 
-lons = np.arange(lon_min, lon_max, step)
+    # create list of lon steps
 
-for year in range(2013, 2024):
+    lons = np.arange(lon_min, lon_max, step)
 
-    for lon in lons:
+    for year in range(2013, 2024):
 
-        lon_start = int(lon)
-        lon_end = int(lon_start + step)
-        
-        # create filter
+        for lon in lons:
 
-        grid_slice = grid.filter(
-            ee.Filter.And(
-                ee.Filter.gte('Lon1', lon_start),
-                ee.Filter.lt('Lon1', lon_end)
+            lon_start = int(lon)
+            lon_end = int(lon_start + step)
+            
+            # create filter
+
+            grid_slice = grid.filter(
+                ee.Filter.And(
+                    ee.Filter.gte('Lon1', lon_start),
+                    ee.Filter.lt('Lon1', lon_end)
+                )
             )
-        )
-        
-        filename = f'classified_{lon_start}_{lon_end}_{year}'
-        
-        # run functions
+            
+            filename = f'classified_{lon_start}_{lon_end}_{year}'
+            
+            # run functions
 
-        grid_cutouts = grid_slice.map(lambda f: coastal_polygon(f, year))
-        one_grid = grid_cutouts.map(image_clipping, dropNulls=True)
-        ice_class = one_grid.map(surface_calculations)
-        
-        # prepare export
+            grid_cutouts = grid_slice.map(lambda f: coastal_polygon(f, year))
+            one_grid = grid_cutouts.map(image_clipping, dropNulls=True)
+            ice_class = one_grid.map(surface_calculations)
+            
+            # prepare export
 
-        task = ee.batch.Export.table.toDrive(
-            collection=ice_class,
-            description=filename,
-            folder='EarthEngineResultsRF',
-            fileFormat='CSV'
-        )
-        
-        # start task
+            task = ee.batch.Export.table.toDrive(
+                collection=ice_class,
+                description=filename,
+                folder='EarthEngineResultsRF',
+                fileFormat='CSV'
+            )
+            
+            # start task
 
-        task.start()
-        print(f'started {filename}')
+            task.start()
+            print(f'started {filename}')
+
+print('after __name__ guard')
