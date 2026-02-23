@@ -1,0 +1,1 @@
+{'numberOfTrees': 215, 'variablesPerSplit': 2, 'minLeafPopulation': 6, 'bagFraction': 0.7411201079191378, 'seed': 12}

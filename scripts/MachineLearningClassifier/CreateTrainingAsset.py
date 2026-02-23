@@ -33,7 +33,7 @@ dataS2 = pd.concat(map(pd.read_csv, pathlist), ignore_index=True)
 dataS2['sensor'] = 1
 
 data = pd.concat((dataL8, dataL9, dataS2), ignore_index=True)
-data.to_csv('../../local_data/SmileTrainingAsset.csv', index=False)
+data.to_csv('../../local_data/RFTrainingAsset.csv', index=False)
 
 # ensure that we have all the class IDs
 

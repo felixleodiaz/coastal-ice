@@ -17,7 +17,7 @@ except Exception as e:
 # constants and datasetup
 
 RANDOM_SEED = 12
-ASSET_ID = "projects/gee-personal-483416/assets/SmileTrainingAsset"
+ASSET_ID = "projects/gee-personal-483416/assets/RFTrainingAsset"
 
 features = [
     "red", 
@@ -186,7 +186,7 @@ validated_test = test_data.classify(eval_classifier)
 # TASK 1
 # export predictions to csv
 
-export_columns = [target, 'classification', 'fold_rand'] 
+export_columns = features + [target, 'classification', 'fold_rand']
 
 task_predictions = ee.batch.Export.table.toDrive(
     collection=validated_test.select(export_columns),
