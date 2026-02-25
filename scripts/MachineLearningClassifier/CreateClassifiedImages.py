@@ -62,7 +62,7 @@ def surface_calculations(image):
 
     # water mask
 
-    waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').clip(geom)
+    waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').clip(geom).unmask(0)
 
     # calculate NDSI for land
 
@@ -78,8 +78,8 @@ def surface_calculations(image):
     classification = (
         ee.Image(0)
         .where(waterMask.eq(1), classified)
-        .where(waterMask.Not().And(landSnow.Not()), 7)
-        .where(waterMask.Not().And(landSnow), 8)
+        .where(waterMask.Not().And(landSnow.Not()), 8)
+        .where(waterMask.Not().And(landSnow), 9)
         .rename('class')
         .clip(geom)
     )
@@ -88,7 +88,22 @@ def surface_calculations(image):
 
     rgb = image.visualize(**{'bands': ['nir', 'swir1', 'blue'], 'min': 0, 'max': 0.4, 'gamma': 1.5})
     rgb = rgb.rename(['rgb_R', 'rgb_G', 'rgb_B'])
-    params = {'min': 0, 'max': 8, 'palette': ['b10000', '6DAEDB', '120D31', '0a29c2', '120D31', '6DAEDB', 'ffffff', '00A676', 'FFE8D1']}
+    params = {
+    'min': 0,
+    'max': 9,
+    'palette': [
+        'b10000', # 0: NA value (bright red)
+        '6DAEDB', # 1: Ice
+        '120D31', # 2: Water
+        '0a29c2', # 3: Melt
+        '029e73', # 4: Thin Ice
+        '120D31', # 5: Hazy Water (visually Water)
+        '6DAEDB', # 6: Hazy Ice (visually Ice)
+        'ffffff', # 7: Clouds
+        'ca9161', # 8: Land
+        'FFE8D1'  # 9: Snow on Land
+    ]
+}
     class_map = classification.visualize(**params)
     class_map = class_map.rename(['class_R', 'class_G', 'class_B'])
     
