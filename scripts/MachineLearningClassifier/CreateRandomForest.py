@@ -46,123 +46,125 @@ data_with_folds = raw_data.randomColumn(columnName='fold_rand', seed=RANDOM_SEED
 train_data = data_with_folds.filter(ee.Filter.lt('fold_rand', 0.8))
 test_data = data_with_folds.filter(ee.Filter.gte('fold_rand', 0.8))
 
-# create stratified random sample for optuna (1 million datapoints ran into time constraints from GEE)
+# # create stratified random sample for optuna (1 million datapoints ran into time constraints from GEE)
 
-SAMPLES_PER_CLASS = 5000
-stratified_subsets = []
+# SAMPLES_PER_CLASS = 5000
+# stratified_subsets = []
 
-for class_id in specific_class_ids:
+# for class_id in specific_class_ids:
 
-    class_collection = train_data.filter(ee.Filter.eq(target, class_id))
+#     class_collection = train_data.filter(ee.Filter.eq(target, class_id))
     
-    subset = class_collection.randomColumn('subsample_rand', seed=RANDOM_SEED)\
-        .sort('subsample_rand')\
-        .limit(SAMPLES_PER_CLASS)
+#     subset = class_collection.randomColumn('subsample_rand', seed=RANDOM_SEED)\
+#         .sort('subsample_rand')\
+#         .limit(SAMPLES_PER_CLASS)
     
-    stratified_subsets.append(subset)
+#     stratified_subsets.append(subset)
 
-opt_data = stratified_subsets[0]
-for i in range(1, len(stratified_subsets)):
-    opt_data = opt_data.merge(stratified_subsets[i])
+# opt_data = stratified_subsets[0]
+# for i in range(1, len(stratified_subsets)):
+#     opt_data = opt_data.merge(stratified_subsets[i])
 
-print("Asset loaded, 80/20 train/test split created, and SRS for optuna generated")
+# print("Asset loaded, 80/20 train/test split created, and SRS for optuna generated")
 
-# define Optuna objective
+# # define Optuna objective
 
-def objective(trial):
+# def objective(trial):
 
-    # hyperparameter search space
+#     # hyperparameter search space
 
-    params = {
-        "numberOfTrees": trial.suggest_int("n_estimators", 50, 300), 
-        "variablesPerSplit": trial.suggest_int("mtry", 1, len(features)), 
-        "minLeafPopulation": trial.suggest_int("min_samples_leaf", 5, 20),
-        "bagFraction": trial.suggest_float("bagging_fraction", 0.5, 0.95),
-        "seed": RANDOM_SEED
-    }
+#     params = {
+#         "numberOfTrees": trial.suggest_int("n_estimators", 50, 300), 
+#         "variablesPerSplit": trial.suggest_int("mtry", 1, len(features)), 
+#         "minLeafPopulation": trial.suggest_int("min_samples_leaf", 5, 20),
+#         "bagFraction": trial.suggest_float("bagging_fraction", 0.5, 0.95),
+#         "seed": RANDOM_SEED
+#     }
 
-    # three fold cross val and randomization col creation
+#     # three fold cross val and randomization col creation
 
-    cv_col = 'inner_cv_rand'
-    opt_data_cv = opt_data.randomColumn(columnName=cv_col, seed=trial.number)
+#     cv_col = 'inner_cv_rand'
+#     opt_data_cv = opt_data.randomColumn(columnName=cv_col, seed=trial.number)
 
-    fold_accuracies = []
-    splits = [0.0, 0.33, 0.66, 1.0]
+#     fold_accuracies = []
+#     splits = [0.0, 0.33, 0.66, 1.0]
 
-    for i in range(3):
-        lower_bound = splits[i]
-        upper_bound = splits[i+1]
+#     for i in range(3):
+#         lower_bound = splits[i]
+#         upper_bound = splits[i+1]
 
-        val_set = opt_data_cv.filter(
-            ee.Filter.And(
-                ee.Filter.gte('inner_cv_rand', lower_bound),
-                ee.Filter.lt('inner_cv_rand', upper_bound)
-            )
-        )
+#         val_set = opt_data_cv.filter(
+#             ee.Filter.And(
+#                 ee.Filter.gte('inner_cv_rand', lower_bound),
+#                 ee.Filter.lt('inner_cv_rand', upper_bound)
+#             )
+#         )
 
-        train_set = opt_data_cv.filter(
-            ee.Filter.Or(
-                ee.Filter.lt('inner_cv_rand', lower_bound),
-                ee.Filter.gte('inner_cv_rand', upper_bound)
-            )
-        )
+#         train_set = opt_data_cv.filter(
+#             ee.Filter.Or(
+#                 ee.Filter.lt('inner_cv_rand', lower_bound),
+#                 ee.Filter.gte('inner_cv_rand', upper_bound)
+#             )
+#         )
 
-        # train random forest
+#         # train random forest
 
-        classifier = ee.Classifier.smileRandomForest(**params)\
-            .train(
-                features=train_set,
-                classProperty=target,
-                inputProperties=features
-            )
+#         classifier = ee.Classifier.smileRandomForest(**params)\
+#             .train(
+#                 features=train_set,
+#                 classProperty=target,
+#                 inputProperties=features
+#             )
 
-        # validate
+#         # validate
 
-        validated = val_set.classify(classifier)
+#         validated = val_set.classify(classifier)
         
-        # calculate accuracy
+#         # calculate accuracy
 
-        accuracy = validated.errorMatrix(target, 'classification').accuracy().getInfo()
-        fold_accuracies.append(accuracy)
+#         accuracy = validated.errorMatrix(target, 'classification').accuracy().getInfo()
+#         fold_accuracies.append(accuracy)
 
-    # return mean accuracy across 3 folds
+#     # return mean accuracy across 3 folds
 
-    mean_accuracy = sum(fold_accuracies) / len(fold_accuracies)
-    return mean_accuracy
+#     mean_accuracy = sum(fold_accuracies) / len(fold_accuracies)
+#     return mean_accuracy
 
-# run study
+# # run study
 
-print("Starting Optuna optimization")
+# print("Starting Optuna optimization")
 
-study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=RANDOM_SEED))
-study.optimize(objective, n_trials=40) 
+# study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=RANDOM_SEED))
+# study.optimize(objective, n_trials=40) 
 
-print("Best params from Optuna:", study.best_params)
-print("Best accuracy achieved:", study.best_value)
+# print("Best params from Optuna:", study.best_params)
+# print("Best accuracy achieved:", study.best_value)
 
-# map params back to GEE useable values for easy use later
+# # map params back to GEE useable values for easy use later
 
-final_gee_params = {
-    "numberOfTrees": study.best_params["n_estimators"],
-    "variablesPerSplit": study.best_params["mtry"],
-    "minLeafPopulation": study.best_params["min_samples_leaf"],
-    "bagFraction": study.best_params["bagging_fraction"],
-    "seed": RANDOM_SEED
-}
+# final_gee_params = {
+#     "numberOfTrees": study.best_params["n_estimators"],
+#     "variablesPerSplit": study.best_params["mtry"],
+#     "minLeafPopulation": study.best_params["min_samples_leaf"],
+#     "bagFraction": study.best_params["bagging_fraction"],
+#     "seed": RANDOM_SEED
+# }
 
-# save study object
+# # save study object
 
-joblib.dump(study, "optuna_gee_rf_study.pkl")
-print("study saved to 'optuna_gee_rf_study.pkl'")
+# joblib.dump(study, "optuna_gee_rf_study.pkl")
+# print("study saved to 'optuna_gee_rf_study.pkl'")
 
-# save interpretable params
+# # save interpretable params
 
-with open("best_gee_rf_params.txt", "w") as f:
-    f.write(str(final_gee_params))
-print("best parameters saved to 'best_gee_rf_params.txt'")
+# with open("best_gee_rf_params.txt", "w") as f:
+#     f.write(str(final_gee_params))
+# print("best parameters saved to 'best_gee_rf_params.txt'")
 
 
 # train a diagnostic model using best params
+
+study = joblib.load("optuna_gee_rf_study.pkl")
 
 final_gee_params = {
 "numberOfTrees": study.best_params["n_estimators"],
