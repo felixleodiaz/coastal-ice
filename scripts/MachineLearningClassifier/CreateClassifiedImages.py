@@ -171,7 +171,7 @@ for feature in samplesList:
     task_lines = ee.batch.Export.image.toDrive(
         image=combined_visuals.select(['rgb_R', 'rgb_G', 'rgb_B']),
         description=export_name_lines,
-        folder='EarthEngineVisualsRF_testTOA',
+        folder='EarthEngineVisualsRFTOA',
         region=cell_feature.geometry(),
         scale=30,
         crs=export_crs,
@@ -187,7 +187,7 @@ for feature in samplesList:
     task_class = ee.batch.Export.image.toDrive(
         image=combined_visuals.select(['class_R', 'class_G', 'class_B']),
         description=export_name_class,
-        folder='EarthEngineClassmapsRF_testTOA',
+        folder='EarthEngineClassmapsRFTOA',
         region=cell_feature.geometry(),
         scale=30,
         crs=export_crs,

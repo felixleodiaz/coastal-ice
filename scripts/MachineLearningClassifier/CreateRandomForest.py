@@ -32,8 +32,8 @@ target = "class_id"
 
 # define these for later
 
-specific_class_ids = [1, 2, 3, 4, 5, 6]
-class_names = ['Ice', 'Water', 'Melt Ponds', 'Hazy Water', 'Hazy Ice', 'Clouds']
+specific_class_ids = [1, 2, 3, 4, 5, 6, 7]
+class_names = ['Ice', 'Water', 'Melt', 'Thin Ice', 'Hazy Water', 'Hazy Ice', 'Clouds']
 
 # load asset
 
@@ -164,7 +164,7 @@ test_data = data_with_folds.filter(ee.Filter.gte('fold_rand', 0.8))
 
 # train a diagnostic model using best params
 
-study = joblib.load("optuna_gee_rf_study.pkl")
+study = joblib.load("optuna_gee_rf_study.pkl") # delete this before publishing
 
 final_gee_params = {
 "numberOfTrees": study.best_params["n_estimators"],
