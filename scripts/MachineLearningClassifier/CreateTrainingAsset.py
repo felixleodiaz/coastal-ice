@@ -1,3 +1,4 @@
+# Create Training Asset for Random Forest Classifier
 # import libraries
 
 import numpy as np

@@ -1,4 +1,4 @@
-# SCRIPT TO GENERATE CLASSIFIED IMAGES FROM SPECIFIED ROWS, COLS, AND DATES
+# SCRIPT TO GENERATE PROBABILITY MAPS AND TRUE COLOR IMAGES FOR SAMPLE CELLS
 
 import ee
 import numpy as np
@@ -13,16 +13,36 @@ except Exception as e:
     ee.Authenticate()
     ee.Initialize(project=project_id)
 
-# load classifier
+# load classifier in multiprobability mode
 
 classifier = ee.Classifier.load('projects/gee-personal-483416/assets/random_forest_seaice_classifier')
+classifier = classifier.setOutputMode('MULTIPROBABILITY')
+
+# load water mask
+
+waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').unmask(0)
+
+# class definitions
+# arrayGet indices are 0-based, mapping to class labels 1-7
+
+CLASSES = [
+    (0, 'seaice',    'Sea Ice'),
+    (1, 'water',     'Water'),
+    (2, 'melt',      'Melt Ponds'),
+    (3, 'thinice',   'Thin Ice'),
+    (4, 'hazywater', 'Hazy Water'),
+    (5, 'hazyice',   'Hazy Ice'),
+    (6, 'cloud',     'Cloud'),
+]
+
+# blues palette for probability maps: white (p=0) to dark blue (p=1)
+
+BLUES_PALETTE = ['ffffff', 'ddeeff', 'aaccee', '6699cc', '3366aa', '003388', '001155']
 
 # function one
-# create images
+# create grid polygon from feature
 
 def coastal_polygon(feature):
-
-    # read in grid polygon coordinates
 
     coordinates = [
         [feature.get('Lon1'), feature.get('Lat1')],
@@ -31,169 +51,193 @@ def coastal_polygon(feature):
         [feature.get('Lon4'), feature.get('Lat4')]
     ]
 
-    # construct grid in earth engine
-
     gridbox = ee.Feature(ee.Geometry.Polygon([coordinates]), {
-        'Column': feature.get('Col'), 
+        'Column': feature.get('Col'),
         'Row': feature.get('Row')
     })
 
     return gridbox
 
 # function two
-# pull from automatic process, get images
+# pull image clipping from main processing script
 
 from AutomaticProcessing import image_clipping
 
 # function three
-# surface classification using a previously saved Random Forest classifier
+# generate true color and per-class probability images
 
-def surface_calculations(image):
+def generate_visuals(image):
 
     image = ee.Image(image)
     geom = image.geometry()
 
     # attach sensor as band
-    
+
     sensor_name = ee.String(image.get('sensor'))
     sensor_val = ee.Number(ee.Algorithms.If(sensor_name.compareTo('Sentinel2').eq(0), 1, 0))
     sensor_band = ee.Image.constant(sensor_val).rename('sensor').toByte()
     image = image.addBands(sensor_band)
 
-    # water mask
+    # true color: NIR / SWIR1 / Blue false color to distinguish ice and water clearly
 
-    waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').clip(geom).unmask(0)
+    rgb = image.visualize(**{
+        'bands': ['nir', 'swir1', 'blue'],
+        'min': 0,
+        'max': 0.4,
+        'gamma': 1.5
+    })
 
-    # calculate NDSI for land
+    # water mask clipped to geometry
+
+    waterMask_clipped = waterMask.clip(geom)
+
+    # run multiprobability classification
+
+    prob_image = image.classify(classifier)
+
+    # extract per-class probability bands and mask to water only
+
+    prob_bands = (
+        prob_image.select('classification').arrayGet([0]).rename('seaice')
+        .addBands(prob_image.select('classification').arrayGet([1]).rename('water'))
+        .addBands(prob_image.select('classification').arrayGet([2]).rename('melt'))
+        .addBands(prob_image.select('classification').arrayGet([3]).rename('thinice'))
+        .addBands(prob_image.select('classification').arrayGet([4]).rename('hazywater'))
+        .addBands(prob_image.select('classification').arrayGet([5]).rename('hazyice'))
+        .addBands(prob_image.select('classification').arrayGet([6]).rename('cloud'))
+        .updateMask(waterMask_clipped.eq(1))
+    )
+
+    # land / snow classification via NDSI for land pixels only
+    # land = 8, snow = 9 (matching AutomaticProcessing convention)
 
     NDSI = image.normalizedDifference(['green', 'swir1']).rename('NDSI')
     landSnow = NDSI.gt(0.4)
+    landMask = waterMask_clipped.eq(0)
 
-    # machine learning classification for ocean cells
-
-    classified = image.classify(classifier)
-
-    # final classification using ML over water and NDSI over land
-
-    classification = (
+    land_class = (
         ee.Image(0)
-        .where(waterMask.eq(1), classified)
-        .where(waterMask.Not().And(landSnow.Not()), 8)
-        .where(waterMask.Not().And(landSnow), 9)
-        .rename('class')
+        .where(landMask.And(landSnow.Not()), 8)
+        .where(landMask.And(landSnow), 9)
+        .rename('land_snow')
         .clip(geom)
     )
 
-    # generate images
+    land_vis = land_class.visualize(**{
+        'min': 0,
+        'max': 9,
+        'palette': [
+            '000000',  # 0: ocean/no data (black, won't be visible over water mask)
+            '000000', '000000', '000000',
+            '000000', '000000', '000000', '000000',
+            'ca9161',  # 8: land
+            'FFE8D1'   # 9: snow on land
+        ]
+    })
 
-    rgb = image.visualize(**{'bands': ['nir', 'swir1', 'blue'], 'min': 0, 'max': 0.4, 'gamma': 1.5})
-    rgb = rgb.rename(['rgb_R', 'rgb_G', 'rgb_B'])
-    params = {
-    'min': 0,
-    'max': 9,
-    'palette': [
-        'b10000', # 0: NA value (bright red)
-        '6DAEDB', # 1: Ice
-        '120D31', # 2: Water
-        '0a29c2', # 3: Melt
-        '029e73', # 4: Thin Ice
-        '120D31', # 5: Hazy Water (visually Water)
-        '6DAEDB', # 6: Hazy Ice (visually Ice)
-        'ffffff', # 7: Clouds
-        'ca9161', # 8: Land
-        'FFE8D1'  # 9: Snow on Land
-    ]
-}
-    class_map = classification.visualize(**params)
-    class_map = class_map.rename(['class_R', 'class_G', 'class_B'])
-    
-    # composite image and return
-
-    final = rgb.addBands(class_map).reproject(**{'crs': image.select(0).projection(), 'scale': 30})
-    return final
+    return rgb, prob_bands, land_vis
 
 # function four
-# error image in case of error
+# error image in case of failure
 
 def create_error_image(region):
-  return ee.Image(0).visualize(**{'palette':['red']}).paint(region, 1, 5)
+    return ee.Image(0).visualize(**{'palette': ['ff0000']}).paint(region, 1, 5)
 
-# load things
+# load assets
 
 print('loading and processing assets')
 grid = ee.FeatureCollection('projects/gee-personal-483416/assets/CoastCellInfoJan5_10')
 samplesCollection = ee.FeatureCollection('projects/gee-personal-483416/assets/sample_images')
 samplesList = samplesCollection.toList(samplesCollection.size()).getInfo()
-print(f'Processing {len(samplesList)} samples')
+print(f'processing {len(samplesList)} samples')
 
 for feature in samplesList:
 
     sample = feature['properties']
 
-    # server side code
+    row  = sample['row']
+    col  = sample['col']
+    date = sample['date']
+
+    # one subfolder per sample image - all outputs for this sample go here
+
+    sample_folder = f'EarthEngineVisuals_{row}_{col}_{date}'
+
+    # server side: find grid cell
 
     raw_feature = grid.filter(ee.Filter.And(
-        ee.Filter.eq('Col', sample['col']),
-        ee.Filter.eq('Row', sample['row'])
+        ee.Filter.eq('Col', col),
+        ee.Filter.eq('Row', row)
     )).first()
 
-    dummy_feature = ee.Feature(None, {'Col': sample['col'], 'Row': sample['row']})
+    dummy_feature = ee.Feature(None, {
+        'Col': col, 
+        'Row': row,
+        'Lon1': 0, 'Lat1': 0, 'Lon2': 0, 'Lat2': 1,
+        'Lon3': 1, 'Lat3': 1, 'Lon4': 1, 'Lat4': 0
+    })
     safe_raw_feature = ee.Feature(ee.Algorithms.If(raw_feature, raw_feature, dummy_feature))
-
-    # run function one
 
     cell_feature = coastal_polygon(safe_raw_feature)
 
-    # get dates and run function two
+    # set date window and retrieve best image
 
-    start_date = sample['date']
-    end_date = ee.Date(start_date).advance(1, 'day').format('YYYY-MM-dd')
-    cell_with_date = cell_feature.set('Start', start_date).set('End', end_date)
+    end_date = ee.Date(date).advance(1, 'day').format('YYYY-MM-dd')
+    cell_with_date = cell_feature.set('Start', date).set('End', end_date)
 
-    img = image_clipping(cell_with_date)
-    img = ee.Image(img)
+    img = ee.Image(image_clipping(cell_with_date))
 
-    # run function three (and four if necessary)
+    export_crs    = 'EPSG:3413'
+    export_region = cell_feature.geometry()
 
-    combined_visuals = ee.Algorithms.If(
-        img, 
-        surface_calculations(img), 
-        create_error_image(cell_feature.geometry())
-    )
-    combined_visuals = ee.Image(combined_visuals)
+    # shared export settings
 
-    export_crs = 'EPSG:3413'
+    def make_export_params(image, description):
+        return {
+            'image':       image,
+            'description': description,
+            'folder':      sample_folder,
+            'region':      export_region,
+            'scale':       30,
+            'crs':         export_crs,
+            'fileFormat':  'GeoTIFF'
+        }
 
-    # export satellite image
+    # generate visuals
 
-    export_name_lines = f"Visual_{sample['row']}_{sample['col']}_{sample['date']}"
-    
-    task_lines = ee.batch.Export.image.toDrive(
-        image=combined_visuals.select(['rgb_R', 'rgb_G', 'rgb_B']),
-        description=export_name_lines,
-        folder='EarthEngineVisualsRFTOA',
-        region=cell_feature.geometry(),
-        scale=30,
-        crs=export_crs,
-        fileFormat='GeoTIFF'
-    )
+    rgb, prob_bands, land_vis = generate_visuals(img)
 
-    task_lines.start()
+    # export 1: true color
 
-    # export classification map
+    ee.batch.Export.image.toDrive(**make_export_params(
+        image=rgb,
+        description=f'TrueColor_{row}_{col}_{date}'
+    )).start()
 
-    export_name_class = f"Class_{sample['row']}_{sample['col']}_{sample['date']}"
-    
-    task_class = ee.batch.Export.image.toDrive(
-        image=combined_visuals.select(['class_R', 'class_G', 'class_B']),
-        description=export_name_class,
-        folder='EarthEngineClassmapsRFTOA',
-        region=cell_feature.geometry(),
-        scale=30,
-        crs=export_crs,
-        fileFormat='GeoTIFF'
-    )
-    task_class.start()
-    print(f'task {export_name_class} started')
+    # export 2: land and snow map
 
-print('tasks exported!')
+    ee.batch.Export.image.toDrive(**make_export_params(
+        image=land_vis,
+        description=f'LandSnow_{row}_{col}_{date}'
+    )).start()
+
+    # export 3: one probability map per class, graduated blues
+
+    for idx, band_name, class_label in CLASSES:
+
+        prob_vis = prob_bands.select(band_name).visualize(**{
+            'min':     0,
+            'max':     1,
+            'palette': BLUES_PALETTE
+        })
+
+        ee.batch.Export.image.toDrive(**make_export_params(
+            image=prob_vis,
+            description=f'Prob_{class_label.replace(" ", "")}_{row}_{col}_{date}'
+        )).start()
+
+        print(f'  queued: {class_label} probability map')
+
+    print(f'all tasks started for sample {row}_{col}_{date} -> folder: {sample_folder}')
+
+print('all samples submitted!')

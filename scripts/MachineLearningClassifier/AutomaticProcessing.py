@@ -2,6 +2,8 @@
 
 import ee
 import numpy as np
+import calendar
+import sys
 
 # initialize earth engine
 
@@ -16,16 +18,20 @@ except Exception as e:
 # load classifier
 
 classifier = ee.Classifier.load('projects/gee-personal-483416/assets/random_forest_seaice_classifier')
+classifier = classifier.setOutputMode('MULTIPROBABILITY')
+
+# load water mask
+waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').unmask(0)
 
 # function one
 # creates polygons in GEE from grid coordinates
 
-def coastal_polygon(feature, year):
+def coastal_polygon(feature, year, month):
 
     # set dates
 
-    starttime = f'{year}-01-01'
-    endtime = f'{year}-12-31'
+    starttime = f'{year}-{month:02d}-01'
+    endtime = f'{year}-{month:02d}-{calendar.monthrange(year, month)[1]}'
 
     # read in grid polygon coordinates
 
@@ -158,7 +164,7 @@ def surface_calculations(image):
     geom = image.geometry()
 
     # attach sensor as band
-    
+
     sensor_name = ee.String(image.get('sensor'))
     sensor_val = ee.Number(ee.Algorithms.If(sensor_name.compareTo('Sentinel2').eq(0), 1, 0))
     sensor_band = ee.Image.constant(sensor_val).rename('sensor').toByte()
@@ -166,78 +172,143 @@ def surface_calculations(image):
 
     # water mask
 
-    waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').clip(geom)
+    waterMask_clipped = waterMask.clip(geom)
 
-    # calculate NDSI for land
+    # static NDSI for land pixels
 
     NDSI = image.normalizedDifference(['green', 'swir1']).rename('NDSI')
     landSnow = NDSI.gt(0.4)
 
-    # machine learning classification for ocean cells
+    # multiprobability classification over water pixels
 
-    classified = image.classify(classifier)
+    prob_image = image.classify(classifier)
 
-    # final classification using ML over water and NDSI over land
+    p_seaice    = prob_image.arrayGet(0).rename('seaice')
+    p_water     = prob_image.arrayGet(2).rename('water')
+    p_melt      = prob_image.arrayGet(1).rename('melt')
+    p_thinice   = prob_image.arrayGet(3).rename('thinice')
+    p_hazywater = prob_image.arrayGet(4).rename('hazywater')
+    p_hazyice   = prob_image.arrayGet(5).rename('hazyice')
+    p_cloud     = prob_image.arrayGet(6).rename('cloud')
 
-    classification = (
-        ee.Image(0)
-        .where(waterMask.eq(1), classified)
-        .where(waterMask.eq(0).And(landSnow.Not()), 7)
-        .where(waterMask.eq(0).And(landSnow), 8)
-        .rename('class')
-        .clip(geom)
+    prob_bands = (
+        p_seaice.addBands([p_water, p_melt, p_thinice, p_hazywater, p_hazyice, p_cloud])
+        .updateMask(waterMask_clipped.eq(1))
     )
 
-    # single pass reduction
+    # compute p * (1 - p) per pixel per class for Bernoulli variance and calc Var[Y_i] = p_i * (1 - p_i)
 
-    stats = (
-        classification
-        .reduceRegion(
-            reducer=ee.Reducer.frequencyHistogram(),
-            geometry=geom,
-            scale=30,
-            maxPixels=1e8
-        )
-        .get('class')
+    var_bands = prob_bands.multiply(prob_bands.subtract(1).multiply(-1)).rename(
+        ['var_seaice', 'var_water', 'var_melt', 'var_thinice', 'var_hazywater', 'var_hazyice', 'var_cloud']
     )
 
-    stats_dict = ee.Dictionary(stats)
+    # sum probabilities across water pixels per class: S = sum(p_i)
 
-    def getCount(key):
-        return ee.Number(ee.Algorithms.If(stats_dict.contains(key), stats_dict.get(key), 0))
-    
-    # get counts and return
+    water_sums = prob_bands.reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=geom,
+        scale=30,
+        maxPixels=1e8
+    )
 
-    nSEAICE = getCount('1')
-    nOCEAN  = getCount('2')
-    nPOND  = getCount('3')
-    nHAZYWATER = getCount('4')
-    nHAZYICE = getCount('5')
-    nCLOUD = getCount('6')
-    nLAND   = getCount('7')
-    nSNOW   = getCount('8')
-    total = nSEAICE.add(nOCEAN).add(nLAND).add(nSNOW)
+    # sum variances across water pixels per class: sum(p_i * (1 - p_i))
+
+    water_vars = var_bands.reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=geom,
+        scale=30,
+        maxPixels=1e8
+    )
+
+    sum_seaice    = ee.Number(water_sums.get('seaice'))
+    sum_water     = ee.Number(water_sums.get('water'))
+    sum_melt      = ee.Number(water_sums.get('melt'))
+    sum_thinice   = ee.Number(water_sums.get('thinice'))
+    sum_hazywater = ee.Number(water_sums.get('hazywater'))
+    sum_hazyice   = ee.Number(water_sums.get('hazyice'))
+    sum_cloud     = ee.Number(water_sums.get('cloud'))
+
+    var_seaice    = ee.Number(water_vars.get('var_seaice'))
+    var_water     = ee.Number(water_vars.get('var_water'))
+    var_melt      = ee.Number(water_vars.get('var_melt'))
+    var_thinice   = ee.Number(water_vars.get('var_thinice'))
+    var_hazywater = ee.Number(water_vars.get('var_hazywater'))
+    var_hazyice   = ee.Number(water_vars.get('var_hazyice'))
+    var_cloud     = ee.Number(water_vars.get('var_cloud'))
+
+    # count land and snow pixels via NDSI, restricted to land mask only
+
+    landMask = waterMask_clipped.eq(0)
+    land_snow_bands = (
+        landMask.And(landSnow.Not()).rename('land')
+        .addBands(landMask.And(landSnow).rename('snow'))
+    )
+
+    land_stats = land_snow_bands.reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=geom,
+        scale=30,
+        maxPixels=1e8
+    )
+
+    nLAND = ee.Number(land_stats.get('land'))
+    nSNOW = ee.Number(land_stats.get('snow'))
+
+    # total combines probability sums (water) and pixel counts (land/snow)
+
+    total = (
+        sum_seaice.add(sum_water).add(sum_melt).add(sum_thinice)
+        .add(sum_hazywater).add(sum_hazyice).add(sum_cloud)
+        .add(nLAND).add(nSNOW)
+    )
+
+    total_sq = total.multiply(total)
+
+    # SE[f] = sqrt(sum(p_i * (1 - p_i))) / N_total
+
+    se_seaice    = var_seaice.divide(total_sq).sqrt()
+    se_water     = var_water.divide(total_sq).sqrt()
+    se_melt      = var_melt.divide(total_sq).sqrt()
+    se_thinice   = var_thinice.divide(total_sq).sqrt()
+    se_hazywater = var_hazywater.divide(total_sq).sqrt()
+    se_hazyice   = var_hazyice.divide(total_sq).sqrt()
+    se_cloud     = var_cloud.divide(total_sq).sqrt()
 
     return ee.Feature(geom, {
-        'total_pixels': total,
-        'sea_ice_frac': nSEAICE.divide(total),
-        'ocean_frac': nOCEAN.divide(total),
-        'land_frac': nLAND.divide(total),
-        'snow_frac': nSNOW.divide(total),
-        'pond_frac': nPOND.divide(total),
-        'hazy_ice_frac': nHAZYICE.divide(total),
-        'hazy_water_frac': nHAZYWATER.divide(total),
-        'cloud_frac': nCLOUD.divide(total),
-        'date': ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'),
+        'total_pixels':       total,
+        'sea_ice_frac':       sum_seaice.divide(total),
+        'sea_ice_se':         se_seaice,
+        'water_frac':         sum_water.divide(total),
+        'water_se':           se_water,
+        'melt_frac':          sum_melt.divide(total),
+        'melt_se':            se_melt,
+        'thin_ice_frac':      sum_thinice.divide(total),
+        'thin_ice_se':        se_thinice,
+        'hazy_water_frac':    sum_hazywater.divide(total),
+        'hazy_water_se':      se_hazywater,
+        'hazy_ice_frac':      sum_hazyice.divide(total),
+        'hazy_ice_se':        se_hazyice,
+        'cloud_frac':         sum_cloud.divide(total),
+        'cloud_se':           se_cloud,
+        'land_frac':          nLAND.divide(total),
+        'snow_frac':          nSNOW.divide(total),
+        'date':   ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'),
         'sensor': image.get('sensor'),
-        'area' : image.get('area'),
-        'row' : image.get('Row'), 
-        'column' : image.get('Column')
+        'area':   image.get('area'),
+        'row':    image.get('Row'),
+        'column': image.get('Column')
     })
 
 # workflow
+# run using python AutomaticProcessing.py <year>
 
 if __name__ == "__main__":
+
+    if len(sys.argv) != 2:
+        print("Please use input format: python script.py <year>")
+        sys.exit(1)
+
+    year = int(sys.argv[1])
 
     grid = ee.FeatureCollection('projects/gee-personal-483416/assets/CoastCellInfoJan5_10')
 
@@ -249,8 +320,7 @@ if __name__ == "__main__":
 
     lons = np.arange(lon_min, lon_max, step)
 
-    for year in range(2013, 2024):
-
+    for month in range(1, 13):
         for lon in lons:
 
             lon_start = int(lon)
@@ -265,11 +335,11 @@ if __name__ == "__main__":
                 )
             )
             
-            filename = f'classified_{lon_start}_{lon_end}_{year}'
+            filename = f'classified_{lon_start}_{lon_end}_{year}_{month:02d}'
             
             # run functions
 
-            grid_cutouts = grid_slice.map(lambda f: coastal_polygon(f, year))
+            grid_cutouts = grid_slice.map(lambda f: coastal_polygon(f, year, month))
             one_grid = grid_cutouts.map(image_clipping, dropNulls=True)
             ice_class = one_grid.map(surface_calculations)
             
@@ -287,4 +357,4 @@ if __name__ == "__main__":
             task.start()
             print(f'started {filename}')
 
-print('after __name__ guard')
+    print("\n All tasks started successfully")
