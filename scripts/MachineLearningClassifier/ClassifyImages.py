@@ -1,4 +1,4 @@
-# SCRIPT TO GENERATE PROBABILITY MAPS AND TRUE COLOR IMAGES FOR SAMPLE CELLS
+# IMAGE GENERATION PIPELINE
 
 import ee
 import numpy as np
@@ -26,13 +26,10 @@ waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2
 # arrayGet indices are 0-based, mapping to class labels 1-7
 
 CLASSES = [
-    (0, 'seaice',    'Sea Ice'),
-    (1, 'water',     'Water'),
-    (2, 'melt',      'Melt Ponds'),
-    (3, 'thinice',   'Thin Ice'),
-    (4, 'hazywater', 'Hazy Water'),
-    (5, 'hazyice',   'Hazy Ice'),
-    (6, 'cloud',     'Cloud'),
+    (0, 'seaice',  'Sea Ice'),
+    (1, 'melt',    'Melt Ponds'),
+    (2, 'water',   'Water'),
+    (3, 'thinice', 'Thin Ice'),
 ]
 
 # blues palette for probability maps: white (p=0) to dark blue (p=1)
@@ -71,6 +68,15 @@ def generate_visuals(image):
     image = ee.Image(image)
     geom = image.geometry()
 
+    # save unmasked image for true color before cloud masking
+
+    image_unmasked = image
+
+    # mask high-confidence opaque cloud pixels before any processing
+
+    cloud_qa = image.select('cloud_qa')
+    image = image.updateMask(cloud_qa.Not())
+
     # attach sensor as band
 
     sensor_name = ee.String(image.get('sensor'))
@@ -80,7 +86,7 @@ def generate_visuals(image):
 
     # true color: NIR / SWIR1 / Blue false color to distinguish ice and water clearly
 
-    rgb = image.visualize(**{
+    rgb = image_unmasked.visualize(**{
         'bands': ['nir', 'swir1', 'blue'],
         'min': 0,
         'max': 0.4,
@@ -99,12 +105,9 @@ def generate_visuals(image):
 
     prob_bands = (
         prob_image.select('classification').arrayGet([0]).rename('seaice')
-        .addBands(prob_image.select('classification').arrayGet([1]).rename('water'))
-        .addBands(prob_image.select('classification').arrayGet([2]).rename('melt'))
+        .addBands(prob_image.select('classification').arrayGet([1]).rename('melt'))
+        .addBands(prob_image.select('classification').arrayGet([2]).rename('water'))
         .addBands(prob_image.select('classification').arrayGet([3]).rename('thinice'))
-        .addBands(prob_image.select('classification').arrayGet([4]).rename('hazywater'))
-        .addBands(prob_image.select('classification').arrayGet([5]).rename('hazyice'))
-        .addBands(prob_image.select('classification').arrayGet([6]).rename('cloud'))
         .updateMask(waterMask_clipped.eq(1))
     )
 

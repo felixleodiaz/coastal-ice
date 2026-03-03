@@ -1,4 +1,4 @@
-# MACHINE LEARNING BASED CLASSIFICATION SCRIPT
+# AUTOMATIC PROCESSING PIPELINE
 
 import ee
 import numpy as np
@@ -72,9 +72,11 @@ def image_clipping(grid):
         .map(
             lambda img: (
                 img
-                .select(
-                    ['B2', 'B3', 'B4', 'B5', 'B6', 'B7'],
-                    ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+                .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'], ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'])
+                .addBands(
+                    img.select('QA_PIXEL').bitwiseAnd(1 << 3).neq(0)
+                    .And(img.select('QA_PIXEL').rightShift(8).bitwiseAnd(3).eq(3))
+                    .rename('cloud_qa')
                 )
                 .set('cloud', img.get('CLOUD_COVER'))
                 .set('sensor', 'Landsat8')
@@ -93,9 +95,11 @@ def image_clipping(grid):
         .map(
             lambda img: (
                 img
-                .select(
-                    ['B2', 'B3', 'B4', 'B5', 'B6', 'B7'],
-                    ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+                .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'], ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'])
+                .addBands(
+                    img.select('QA_PIXEL').bitwiseAnd(1 << 3).neq(0)
+                    .And(img.select('QA_PIXEL').rightShift(8).bitwiseAnd(3).eq(3))
+                    .rename('cloud_qa')
                 )
                 .set('cloud', img.get('CLOUD_COVER'))
                 .set('sensor', 'Landsat9')
@@ -118,9 +122,10 @@ def image_clipping(grid):
                     .divide(10000),
                     overwrite=True
                 )
-                .select(
-                    ['B2', 'B3', 'B4', 'B8', 'B11', 'B12'],
-                    ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+                .select(['B2', 'B3', 'B4', 'B8', 'B11', 'B12'], ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'])
+                .addBands(
+                    img.select('QA60').bitwiseAnd(1 << 10).neq(0)
+                    .rename('cloud_qa')
                 )
                 .set('cloud', img.get('CLOUDY_PIXEL_PERCENTAGE'))
                 .set('sensor', 'Sentinel2')
@@ -163,6 +168,19 @@ def surface_calculations(image):
     image = ee.Image(image)
     geom = image.geometry()
 
+    # count and then mask high-confidence opaque cloud pixels
+
+    cloud_qa = image.select('cloud_qa')
+
+    nCLOUD_QA = ee.Number(cloud_qa.reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=geom,
+        scale=30,
+        maxPixels=1e8
+    ).get('cloud_qa'))
+
+    image = image.updateMask(cloud_qa.Not())
+
     # attach sensor as band
 
     sensor_name = ee.String(image.get('sensor'))
@@ -184,22 +202,19 @@ def surface_calculations(image):
     prob_image = image.classify(classifier)
 
     p_seaice    = prob_image.arrayGet(0).rename('seaice')
-    p_water     = prob_image.arrayGet(2).rename('water')
-    p_melt      = prob_image.arrayGet(1).rename('melt')
+    p_melt    = prob_image.arrayGet(1).rename('melt')
+    p_water      = prob_image.arrayGet(2).rename('water')
     p_thinice   = prob_image.arrayGet(3).rename('thinice')
-    p_hazywater = prob_image.arrayGet(4).rename('hazywater')
-    p_hazyice   = prob_image.arrayGet(5).rename('hazyice')
-    p_cloud     = prob_image.arrayGet(6).rename('cloud')
 
     prob_bands = (
-        p_seaice.addBands([p_water, p_melt, p_thinice, p_hazywater, p_hazyice, p_cloud])
+        p_seaice.addBands([p_water, p_melt, p_thinice])
         .updateMask(waterMask_clipped.eq(1))
     )
 
     # compute p * (1 - p) per pixel per class for Bernoulli variance and calc Var[Y_i] = p_i * (1 - p_i)
 
     var_bands = prob_bands.multiply(prob_bands.subtract(1).multiply(-1)).rename(
-        ['var_seaice', 'var_water', 'var_melt', 'var_thinice', 'var_hazywater', 'var_hazyice', 'var_cloud']
+        ['var_seaice', 'var_water', 'var_melt', 'var_thinice']
     )
 
     # sum probabilities across water pixels per class: S = sum(p_i)
@@ -224,17 +239,11 @@ def surface_calculations(image):
     sum_water     = ee.Number(water_sums.get('water'))
     sum_melt      = ee.Number(water_sums.get('melt'))
     sum_thinice   = ee.Number(water_sums.get('thinice'))
-    sum_hazywater = ee.Number(water_sums.get('hazywater'))
-    sum_hazyice   = ee.Number(water_sums.get('hazyice'))
-    sum_cloud     = ee.Number(water_sums.get('cloud'))
 
     var_seaice    = ee.Number(water_vars.get('var_seaice'))
     var_water     = ee.Number(water_vars.get('var_water'))
     var_melt      = ee.Number(water_vars.get('var_melt'))
     var_thinice   = ee.Number(water_vars.get('var_thinice'))
-    var_hazywater = ee.Number(water_vars.get('var_hazywater'))
-    var_hazyice   = ee.Number(water_vars.get('var_hazyice'))
-    var_cloud     = ee.Number(water_vars.get('var_cloud'))
 
     # count land and snow pixels via NDSI, restricted to land mask only
 
@@ -258,7 +267,6 @@ def surface_calculations(image):
 
     total = (
         sum_seaice.add(sum_water).add(sum_melt).add(sum_thinice)
-        .add(sum_hazywater).add(sum_hazyice).add(sum_cloud)
         .add(nLAND).add(nSNOW)
     )
 
@@ -270,12 +278,10 @@ def surface_calculations(image):
     se_water     = var_water.divide(total_sq).sqrt()
     se_melt      = var_melt.divide(total_sq).sqrt()
     se_thinice   = var_thinice.divide(total_sq).sqrt()
-    se_hazywater = var_hazywater.divide(total_sq).sqrt()
-    se_hazyice   = var_hazyice.divide(total_sq).sqrt()
-    se_cloud     = var_cloud.divide(total_sq).sqrt()
 
     return ee.Feature(geom, {
         'total_pixels':       total,
+        'cloud_qa_pixels': nCLOUD_QA,
         'sea_ice_frac':       sum_seaice.divide(total),
         'sea_ice_se':         se_seaice,
         'water_frac':         sum_water.divide(total),
@@ -284,12 +290,6 @@ def surface_calculations(image):
         'melt_se':            se_melt,
         'thin_ice_frac':      sum_thinice.divide(total),
         'thin_ice_se':        se_thinice,
-        'hazy_water_frac':    sum_hazywater.divide(total),
-        'hazy_water_se':      se_hazywater,
-        'hazy_ice_frac':      sum_hazyice.divide(total),
-        'hazy_ice_se':        se_hazyice,
-        'cloud_frac':         sum_cloud.divide(total),
-        'cloud_se':           se_cloud,
         'land_frac':          nLAND.divide(total),
         'snow_frac':          nSNOW.divide(total),
         'date':   ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'),
