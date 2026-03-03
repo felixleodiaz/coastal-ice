@@ -202,19 +202,19 @@ def surface_calculations(image):
     prob_image = image.classify(classifier)
 
     p_seaice    = prob_image.arrayGet(0).rename('seaice')
-    p_melt    = prob_image.arrayGet(1).rename('melt')
-    p_water      = prob_image.arrayGet(2).rename('water')
+    p_melt      = prob_image.arrayGet(1).rename('melt')
+    p_water     = prob_image.arrayGet(2).rename('water')
     p_thinice   = prob_image.arrayGet(3).rename('thinice')
 
     prob_bands = (
-        p_seaice.addBands([p_water, p_melt, p_thinice])
+        p_seaice.addBands([p_melt, p_water, p_thinice])
         .updateMask(waterMask_clipped.eq(1))
     )
 
     # compute p * (1 - p) per pixel per class for Bernoulli variance and calc Var[Y_i] = p_i * (1 - p_i)
 
     var_bands = prob_bands.multiply(prob_bands.subtract(1).multiply(-1)).rename(
-        ['var_seaice', 'var_water', 'var_melt', 'var_thinice']
+        ['var_seaice', 'var_melt', 'var_water', 'var_thinice']
     )
 
     # sum probabilities across water pixels per class: S = sum(p_i)
