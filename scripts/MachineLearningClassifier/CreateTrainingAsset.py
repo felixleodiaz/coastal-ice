@@ -33,9 +33,28 @@ pathlist = list(paths)
 dataS2 = pd.concat(map(pd.read_csv, pathlist), ignore_index=True)
 dataS2['sensor'] = 1
 
+# concatenate all data and remap Hazy classes to their base classes (eg Hazy Ice to Ice)
+
 data = pd.concat((dataL8, dataL9, dataS2), ignore_index=True)
+data['class_id'] = data['class_id'].map({
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 3,
+    6: 1
+})
+
+# save data to csv
+
 data.to_csv('../../local_data/RFTrainingAsset.csv', index=False)
-
-# ensure that we have all the class IDs
-
 print(f"Current class IDs are {data.class_id.unique()}")
+
+# calculate and print class distribution
+
+class_counts = data['class_id'].value_counts().sort_index()
+class_percentages = (class_counts / class_counts.sum()) * 100
+print("Class Distribution:")
+for class_id, count in class_counts.items():
+    percentage = class_percentages[class_id]
+    print(f"Class {class_id}: {count} samples ({percentage:.2f}%)")
