@@ -3,13 +3,6 @@
 import ee
 import optuna
 import joblib
-import time
-
-# wait for 30 minutes
-
-print("waiting for 30 minutes for asset to upload")
-time.sleep(1000)
-print("wait complete proceeding with script")
 
 # initialize earth engine
 
@@ -147,7 +140,9 @@ study.optimize(objective, n_trials=40)
 print("Best params from Optuna:", study.best_params)
 print("Best accuracy achieved:", study.best_value)
 
-# map params back to GEE useable values for easy use later
+# # map params back to GEE useable values for easy use later
+
+study = joblib.load("optuna_gee_rf_study.pkl")
 
 final_gee_params = {
     "numberOfTrees": study.best_params["n_estimators"],
@@ -203,27 +198,24 @@ task_predictions = ee.batch.Export.table.toDrive(
 task_predictions.start()
 print("task started and saving to 'EarthEngineResults/TestDataPredictionsRF.csv'")
 
-# TASK 2
-# export final probability model to asset
+# # TASK 2
+# # export final trained model to asset
+# # though it seems GEE does not support exporting the probability mode version of the classifier for some reason
 
-final_prob_classifier = ee.Classifier.smileRandomForest(**final_gee_params)\
-    .setOutputMode('MULTIPROBABILITY')\
-    .train(
-        features=raw_data,
-        classProperty=target,
-        inputProperties=features
-    )
+# final_classifier = ee.Classifier.smileRandomForest(**final_gee_params)\
+#     .train(
+#         features=raw_data,
+#         classProperty=target,
+#         inputProperties=features
+#     )
 
-# probability classifier
+# classifier_asset_id = 'projects/gee-personal-483416/assets/random_forest_seaice_classifier'
 
-classifier_asset_id = 'projects/gee-personal-483416/assets/random_forest_seaice_classifier'
+# task_model = ee.batch.Export.classifier.toAsset(
+#     classifier=final_classifier,
+#     description='Saved-random-forest-classifier', 
+#     assetId=classifier_asset_id
+# )
+# task_model.start()
 
-task_model = ee.batch.Export.classifier.toAsset(
-    classifier=final_prob_classifier, 
-    description='Saved-random-forest-probability', 
-    assetId=classifier_asset_id
-)
-task_model.start()
-
-print(f"\nStarted task to save final PROBABILITY classifier to {classifier_asset_id}")
-print('Done!')
+# print(f"\nStarted task to save final classifier to {classifier_asset_id}")

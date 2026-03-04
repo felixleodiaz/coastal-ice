@@ -58,3 +58,29 @@ print("Class Distribution:")
 for class_id, count in class_counts.items():
     percentage = class_percentages[class_id]
     print(f"Class {class_id}: {count} samples ({percentage:.2f}%)")
+
+# and get stratified sample
+
+SAMPLES_PER_CLASS = 16000
+print(f"\ngenerating {SAMPLES_PER_CLASS} sample stratified subset")
+
+# get sample
+
+sampled_data = data.groupby('class_id', group_keys=False).apply(
+    lambda x: x.sample(n=min(len(x), SAMPLES_PER_CLASS), random_state=RANDOM_SEED)
+)
+
+# shuffle final dataset and save to csv
+
+sampled_data = sampled_data.sample(frac=1, random_state=RANDOM_SEED).reset_index(drop=True)
+sampled_path = '../../local_data/training_asset_sample.csv'
+sampled_data.to_csv(sampled_path, index=False)
+
+# verify class distribution of subset
+
+sampled_counts = sampled_data['class_id'].value_counts().sort_index()
+print("\nSubset Class Distribution:")
+for class_id, count in sampled_counts.items():
+    print(f"Class {class_id}: {count} samples")
+
+print(f"\nSuccess! Total subset rows: {len(sampled_data)}. Saved to {sampled_path}")

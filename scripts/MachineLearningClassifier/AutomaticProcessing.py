@@ -15,12 +15,29 @@ except Exception as e:
     ee.Authenticate()
     ee.Initialize(project=project_id)
 
-# load classifier
+# load training data and train classifier
 
-classifier = ee.Classifier.load('projects/gee-personal-483416/assets/random_forest_seaice_classifier')
-classifier = classifier.setOutputMode('MULTIPROBABILITY')
+training_data = ee.FeatureCollection('projects/gee-personal-483416/assets/training_asset_sample')
+
+best_params = {
+    'numberOfTrees': 198, 
+    'variablesPerSplit': 3, 
+    'minLeafPopulation': 5, 
+    'bagFraction': 0.9428329774159232, 
+    'seed': 12
+}
+
+classifier = (ee.Classifier.smileRandomForest(**best_params)
+    .setOutputMode('MULTIPROBABILITY')
+    .train(
+        features=training_data,
+        classProperty='class_id',
+        inputProperties=['blue', 'green', 'red', 'nir', 'swir1', 'swir2', 'sensor']
+    )
+)
 
 # load water mask
+
 waterMask = ee.Image('projects/gee-personal-483416/assets/connected_water_mask_2015').unmask(0)
 
 # function one
@@ -56,109 +73,7 @@ def coastal_polygon(feature, year, month):
 # function two
 # gets images from Landsat 8/9 and Sentinel 2 and clips to grid
 
-def image_clipping(grid):
-
-    gridGeom = grid.geometry()
-    startdate = grid.get('Start')
-    enddate = grid.get('End')
-
-    # get landsat 8 images TOA
-    
-    L8 = (
-        ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA')
-        .filterDate(startdate, enddate)
-        .filterBounds(gridGeom)
-        .filter(ee.Filter.lt('CLOUD_COVER', 5))
-        .map(
-            lambda img: (
-                img
-                .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'], ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'])
-                .addBands(
-                    img.select('QA_PIXEL').bitwiseAnd(1 << 3).neq(0)
-                    .And(img.select('QA_PIXEL').rightShift(8).bitwiseAnd(3).eq(3))
-                    .rename('cloud_qa')
-                )
-                .set('cloud', img.get('CLOUD_COVER'))
-                .set('sensor', 'Landsat8')
-                .set('area', img.geometry().intersection(gridGeom, 1).area())
-            )
-        )
-    )
-
-    # get landsat 9 images TOA
-
-    L9 = (
-        ee.ImageCollection('LANDSAT/LC09/C02/T1_TOA')
-        .filterDate(startdate, enddate)
-        .filterBounds(gridGeom)
-        .filter(ee.Filter.lt('CLOUD_COVER', 5))
-        .map(
-            lambda img: (
-                img
-                .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'], ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'])
-                .addBands(
-                    img.select('QA_PIXEL').bitwiseAnd(1 << 3).neq(0)
-                    .And(img.select('QA_PIXEL').rightShift(8).bitwiseAnd(3).eq(3))
-                    .rename('cloud_qa')
-                )
-                .set('cloud', img.get('CLOUD_COVER'))
-                .set('sensor', 'Landsat9')
-                .set('area', img.geometry().intersection(gridGeom, 1).area())
-            )
-        )
-    )
-
-    # get sentinel 2 images TOA
-
-    S2 = (
-        ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
-        .filterDate(startdate, enddate)
-        .filterBounds(gridGeom)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 5))
-        .map(
-            lambda img: (
-                img.addBands(
-                    img.select(['B2', 'B3', 'B4', 'B8', 'B11', 'B12'])
-                    .divide(10000),
-                    overwrite=True
-                )
-                .select(['B2', 'B3', 'B4', 'B8', 'B11', 'B12'], ['blue', 'green', 'red', 'nir', 'swir1', 'swir2'])
-                .addBands(
-                    img.select('QA60').bitwiseAnd(1 << 10).neq(0)
-                    .rename('cloud_qa')
-                )
-                .set('cloud', img.get('CLOUDY_PIXEL_PERCENTAGE'))
-                .set('sensor', 'Sentinel2')
-                .set('area', img.geometry().intersection(gridGeom, 1).area())
-            )
-        )
-    )
-
-    # merge datasets
-
-    merged = L8.merge(L9).merge(S2)
-    nimages = merged.size()
-
-    # sort by lowest cloud fraction and pick the lowest
-
-    merged = merged.sort('cloud').sort('area', False)
-
-    # make sure not null, attach metadata and export
-    
-    safe_image = ee.Image(ee.Algorithms.If(
-        nimages.gt(0), 
-        merged.first(), 
-        ee.Image.constant(0)
-    ))
-    
-    best = safe_image.clip(gridGeom).set({
-        'Row': grid.get('Row'),
-        'Column': grid.get('Column'),
-        'system:time_start': safe_image.get('system:time_start')
-    })
-
-    return ee.Image(ee.Algorithms.If(nimages.gt(0), best, None))
-
+from ImageClipping import image_clipping
 
 # function three
 # surface classification using a previously saved Random Forest classifier

@@ -13,10 +13,26 @@ except Exception as e:
     ee.Authenticate()
     ee.Initialize(project=project_id)
 
-# load classifier in multiprobability mode
+# load training data and train classifier
 
-classifier = ee.Classifier.load('projects/gee-personal-483416/assets/random_forest_seaice_classifier')
-classifier = classifier.setOutputMode('MULTIPROBABILITY')
+training_data = ee.FeatureCollection('projects/gee-personal-483416/assets/training_asset_sample')
+
+best_params = {
+    'numberOfTrees': 198, 
+    'variablesPerSplit': 3, 
+    'minLeafPopulation': 5, 
+    'bagFraction': 0.9428329774159232, 
+    'seed': 12
+}
+
+classifier = (ee.Classifier.smileRandomForest(**best_params)
+    .setOutputMode('MULTIPROBABILITY')
+    .train(
+        features=training_data,
+        classProperty='class_id',
+        inputProperties=['blue', 'green', 'red', 'nir', 'swir1', 'swir2', 'sensor']
+    )
+)
 
 # load water mask
 
@@ -58,7 +74,7 @@ def coastal_polygon(feature):
 # function two
 # pull image clipping from main processing script
 
-from AutomaticProcessing import image_clipping
+from ImageClipping import image_clipping
 
 # function three
 # generate true color and per-class probability images
