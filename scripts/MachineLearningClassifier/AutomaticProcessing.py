@@ -263,7 +263,7 @@ if __name__ == "__main__":
             task = ee.batch.Export.table.toDrive(
                 collection=ice_class,
                 description=filename,
-                folder='EarthEngineResultsRF',
+                folder='AutomaticProcessingResults',
                 fileFormat='CSV'
             )
             
