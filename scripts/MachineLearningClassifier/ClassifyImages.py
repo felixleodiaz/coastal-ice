@@ -100,10 +100,10 @@ def generate_visuals(image):
     sensor_band = ee.Image.constant(sensor_val).rename('sensor').toByte()
     image = image.addBands(sensor_band)
 
-    # true color: NIR / SWIR1 / Blue false color to distinguish ice and water clearly
+    # true color
 
     rgb = image_unmasked.visualize(**{
-        'bands': ['nir', 'swir1', 'blue'],
+        'bands': ['red', 'green', 'blue'],
         'min': 0,
         'max': 0.4,
         'gamma': 1.5
