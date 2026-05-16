@@ -134,7 +134,7 @@ def make_export_params(image, description, export_region):
     return {
         'image':       image,
         'description': description,
-        'folder':      'RandomSampleImages',
+        'folder':      'HighErrorSubsetImages',
         'region':      export_region,
         'scale':       30,
         'crs':         'EPSG:3413',
@@ -146,7 +146,7 @@ def make_export_params(image, description, export_region):
 # submits export tasks to GEE
 
 if __name__ == '__main__':
-    sample_df = pd.read_csv('random_sample_images.csv')
+    sample_df = pd.read_csv('../../local_data/high_errors_subset_all_years.csv')
     grid = ee.FeatureCollection('projects/gee-personal-483416/assets/CoastCellInfoJan5_10')
 
     print(f'processing {len(sample_df)} samples:')
