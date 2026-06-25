@@ -3,13 +3,13 @@ By Felix Diaz and Alice Bradley
 
 This is data analysis for my senior thesis at Williams College, Massachussets, advised by Dr Alice Bradley. I am looking at error between Passive Microwave (PMW) coastal sea ice products and visual data derived in Google Earth Engine. Scripts used for the project can be found in scripts/ and figures are sorted into folders in figures/. The small datasets  I could fit into this repository can be found in data/ alongside cleaned dataframes with final error calculations.
 
-## How to use this code
+# How to use this code
 
 The code in this repo is organized in the scripts/ folder. Inside the folder all of the scripts needed to run the machine learning classification are inside the MachineLearningClassifier/ folder and all of the scripts needed to download NASA Team and Bootstrap, and run the data analysis we did, are in the PassiveMicrowaveComparison/ folder. Below are two sections describing in detail how to run the scripts in these two folders. 
 
 Before doing anything please ensure you have figures/, scripts/, environments/, and data/, and create alongside them a directory called local_data/. Once you have that you are all set. Thanks for reading!
 
-# How to Run the Machine Learning Classifier
+## How to Run the Machine Learning Classifier
 
 This code needs a Google Earth Engine account. One can be aquired at https://www.code.earthengine.google.com. Below are the steps to run the classifier.
 
@@ -30,7 +30,7 @@ The AutomaticProcessing.py script is the main processing script of this analysis
 
 Repeat this for all the years you want to classify. We use 2013 to 2025. Finally, save the folder AutomaticProcessingResults which is now in your google drive to a folder called local_data which you should create in the main coastal-ice folder.
 
-# How to Calculate Errors
+## How to Calculate Errors
 
 For this you need the classified results calculated in the above section saved in the folder  coastal-ice/local_data/AutomaticProcessingResults/. You also need to have the coastal-ice conda environment activated. You can again find the yaml for this in the environments/ directory.
 
@@ -44,7 +44,7 @@ Now run the ValidationComparison.py script with the coastal-ice environment acti
 
 Lastly, the ErrorAnalysis.ipynb notebook runs you through all of the figures we created for this thesis.
 
-# Read our analysis
+## Read our analysis
 
 We have saved the thesis and working paper to this repo! Please enjoy
 
