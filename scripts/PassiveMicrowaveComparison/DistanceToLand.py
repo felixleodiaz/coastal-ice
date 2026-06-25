@@ -1,5 +1,6 @@
 # import libraries
 # run this script once prior to running validation comparison and error analysis scripts
+# it calculates and saves a distance to land dataset
 
 import numpy as np
 import geopandas as gpd
